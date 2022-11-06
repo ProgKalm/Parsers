@@ -14,7 +14,10 @@ def to_int(text: str = "0"):
             for char in text:
                 if "0" <= char <= "9":
                     number = number + char
-            return number
+            try:
+                return int(number)
+            except Exception as ignored:
+                return 0
     return 0
 
 
@@ -25,6 +28,34 @@ class SortMode:
     PRICEDOWN = "pricedown"
     UPDATE = "newly"
     BENEFIT = "benefit"
+
+
+class Item:
+
+    def __init__(self, url: str, data: dict):
+        self.url = url
+        self.data = data
+        self.data['url'] = url
+        self.name = data.get('name')
+        self.price = data.get('price')
+        self.details = data.get('details')
+
+    def __str__(self) -> str:
+        return self.data.__str__()
+
+    def __repr__(self) -> str:
+        return self.__str__()
+
+
+class FilterKey:
+    PRICE_MORE = "price_more"
+    PRICE_LOW = "price_low"
+
+    @classmethod
+    def check(cls, type_, eq_val: int, value: int):
+        if type_ == cls.PRICE_MORE:
+            return eq_val <= value
+        return eq_val >= value
 
 
 class Wildberries:
@@ -47,7 +78,7 @@ class Wildberries:
         self.__max_page_count = 3
         self.__user = user
 
-    def set_max_page_cout(self, count: int = 1):
+    def set_max_page_count(self, count: int = 1):
         if count <= 1:
             self.__max_page_count = 1
         else:
@@ -56,32 +87,32 @@ class Wildberries:
     def set_sort_mode(self, sort_mode: SortMode):
         self.__sort_mode = sort_mode
 
+    @staticmethod
+    def filter_by_price(data: list[Item], by: FilterKey = FilterKey.PRICE_MORE, value: int = 0):
+        res = []
+        for item in data:
+            if FilterKey.check(by, value, item.price):
+                res.append(item)
+        return res
+
     def find(self, search_request: str):
         try:
-            data = []
+            data: list[Item] = []
             items_urls = self.__pages_parse(search_request)
-
             for item_url in items_urls:
-                print(f"Url: {item_url}")
-                item_data = self.__go_to_item(item_url)
+                item_data = self.__parse_item(item_url)
                 if item_data is not None:
-                    data.append(item_data)
-
-            if len(data) > 0:
-                self.__save_result(data)
-
+                    data.append(Item(item_url, item_data))
+            return data
         except Exception as ex:
             print(ex)
-        finally:
-            self.__close()
 
     def __pages_parse(self, search_request: str):
         page = 1
         items_urls = []
         while page <= self.__max_page_count:
-            print(f"Page: {page}")
-            self.__go_to_page(page, search_request)
-            time.sleep(1)
+            if self.__go_to_page(page, search_request):
+                break
             items_list = self.__driver.find_element(By.CLASS_NAME, "product-card-overflow")
             items_list = items_list.find_elements(By.CLASS_NAME, "product-card__wrapper")
             for item in items_list:
@@ -91,32 +122,28 @@ class Wildberries:
             page += 1
         return items_urls
 
-    def __close(self):
+    def close(self):
         self.__driver.close()
         self.__driver.quit()
 
-    def __go_to_item(self, item_url: str):
+    def __parse_item(self, item_url):
         try:
-            self.__driver.get(item_url)
-            time.sleep(3)
+            if self.__go_to_item(item_url):
+                return None
             item_data = {}
             item = self.__driver.find_element(By.CLASS_NAME, "product-page").find_element(By.CLASS_NAME,
                                                                                           "product-page__grid")
             # find name
             item_name = item.find_element(By.CLASS_NAME, "product-page__header-wrap").find_element(By.TAG_NAME, "h1")
             item_data.setdefault("name", item_name.text)
-            print(f"Name: {item_name}")
             # find price
             item_price = item.find_element(By.CLASS_NAME, "product-page__price-block")
             item_price = item_price.find_element(By.CLASS_NAME, "price-block")
             item_price = item_price.find_element(By.CLASS_NAME, "price-block__content")
             item_price = item_price.find_element(By.TAG_NAME, "p").find_element(By.TAG_NAME, "ins")
-            item_price = to_int(item_price.text)
+            item_price = int(to_int(item_price.text))
             item_data.setdefault("price", item_price)
-            print(f"Price: {item_price}")
             # find details
-            item_details = item.find_element(By.CLASS_NAME, "product-page__details-section")
-            self.__driver.find_element(By.XPATH, self.__ALL_ITEM_DETAILS_BUTTON).click()
             item_details = item.find_element(By.CLASS_NAME, "product-page__details-section")
             item_details = item_details.find_element(By.CLASS_NAME, "product-params")
             item_details = item_details.find_elements(By.TAG_NAME, "table")
@@ -132,22 +159,35 @@ class Wildberries:
                     detail_data.setdefault(key, value)
                 details_data.setdefault(detail_name, detail_data)
             item_data.setdefault("details", details_data)
-            print(f"Details:  {details_data}")
-            time.sleep(3)
             return item_data
-        except Exception as ex:
-            print(ex)
-            return None
+        except Exception as ignored:
+            pass
+        return None
+
+    def __go_to_item(self, item_url: str):
+        self.__driver.get(item_url)
+        time.sleep(1)
+        return self.check_not_found()
+
+    def check_not_found(self):
+        try:
+            not_found_text = self.__driver.find_element(By.CLASS_NAME, "catalog-page__text")
+            return True
+        except Exception as ignored:
+            pass
+        return False
 
     def __go_to_page(self, page, search_request: str):
         req = f"{self.__host}catalog/0/search.aspx?page={page}&sort={self.__sort_mode}&search={search_request}"
         self.__driver.get(req)
+        time.sleep(1)
+        return self.check_not_found()
 
-    def __save_result(self, results):
+    def save_result(self, results: list[Item]):
         self.see_dir("./results/")
         file_name = f"{self.__user.strip('_')}.json"
         with open(f"./results/{file_name}", "w", encoding="utf-8") as file:
-            file.write(json.dumps(results))
+            file.write(json.dumps(results.__repr__()))
 
     @staticmethod
     def __is_valid_request(search_request: str):
@@ -159,6 +199,14 @@ class Wildberries:
             os.mkdir(path)
 
 
-w = Wildberries()
-w.set_max_page_cout(1)
-w.find("смартфоны")
+def main():
+    w = Wildberries()
+    w.set_max_page_count(1)
+    data = w.find("планшеты")
+    data = w.filter_by_price(data, FilterKey.PRICE_LOW, 16000)
+    w.save_result(data)
+    w.close()
+
+
+if __name__ == '__main__':
+    main()
