@@ -61,15 +61,16 @@ class FilterKey:
 class Wildberries:
     __host = "https://www.wildberries.ru/"
     __options_params = {
-        "--user-agent": f"{fake_useragent.UserAgent().random}",
-        "--disable-blink-features": "AutomationControlled"
+        "--user-agent": f"{fake_useragent.UserAgent().random}",  # create fake_user agent
+        "--disable-blink-features": "AutomationControlled"  # delete browser param of bot_mode
     }
-    __ALL_ITEM_DETAILS_BUTTON = '/html/body/div[1]/main/div[2]/div/div[3]/div/div[3]/section/div[2]/section[1]/div[2]/div[2]/div'
 
     def __init__(self, user: str = __name__):
+        # load option
         options = webdriver.ChromeOptions()
         for option in self.__options_params:
             options.add_argument(f"{option}={self.__options_params[option]}")
+        # build driver
         self.__driver = webdriver.Chrome(
             service=Service(r".\drivers\chrome32.exe"),
             options=options
@@ -78,24 +79,24 @@ class Wildberries:
         self.__max_page_count = 3
         self.__user = user
 
-    def set_max_page_count(self, count: int = 1):
+    def set_max_page_count(self, count: int = 1) -> None:
         if count <= 1:
             self.__max_page_count = 1
         else:
             self.__max_page_count = count
 
-    def set_sort_mode(self, sort_mode: SortMode):
+    def set_sort_mode(self, sort_mode: SortMode) -> None:
         self.__sort_mode = sort_mode
 
     @staticmethod
-    def filter_by_price(data: list[Item], by: FilterKey = FilterKey.PRICE_MORE, value: int = 0):
+    def filter_by_price(data: list[Item], by: FilterKey = FilterKey.PRICE_MORE, value: int = 0) -> list[Item]:
         res = []
         for item in data:
             if FilterKey.check(by, value, item.price):
                 res.append(item)
         return res
 
-    def find(self, search_request: str):
+    def find(self, search_request: str) -> list[Item]:
         try:
             data: list[Item] = []
             items_urls = self.__pages_parse(search_request)
@@ -107,7 +108,7 @@ class Wildberries:
         except Exception as ex:
             print(ex)
 
-    def __pages_parse(self, search_request: str):
+    def __pages_parse(self, search_request: str) -> list[str]:
         page = 1
         items_urls = []
         while page <= self.__max_page_count:
@@ -122,11 +123,11 @@ class Wildberries:
             page += 1
         return items_urls
 
-    def close(self):
+    def close(self) -> None:
         self.__driver.close()
         self.__driver.quit()
 
-    def __parse_item(self, item_url):
+    def __parse_item(self, item_url) -> dict:
         try:
             if self.__go_to_item(item_url):
                 return None
@@ -164,12 +165,12 @@ class Wildberries:
             pass
         return None
 
-    def __go_to_item(self, item_url: str):
+    def __go_to_item(self, item_url: str) -> bool:
         self.__driver.get(item_url)
         time.sleep(1)
-        return self.check_not_found()
+        return self.__check_not_found()
 
-    def check_not_found(self):
+    def __check_not_found(self) -> bool:
         try:
             not_found_text = self.__driver.find_element(By.CLASS_NAME, "catalog-page__text")
             return True
@@ -177,24 +178,24 @@ class Wildberries:
             pass
         return False
 
-    def __go_to_page(self, page, search_request: str):
+    def __go_to_page(self, page, search_request: str) -> bool:
         req = f"{self.__host}catalog/0/search.aspx?page={page}&sort={self.__sort_mode}&search={search_request}"
         self.__driver.get(req)
         time.sleep(1)
-        return self.check_not_found()
+        return self.__check_not_found()
 
-    def save_result(self, results: list[Item]):
-        self.see_dir("./results/")
+    def save_result(self, results: list[Item]) -> None:
+        self.__create_dir("./results/")
         file_name = f"{self.__user.strip('_')}.json"
         with open(f"./results/{file_name}", "w", encoding="utf-8") as file:
             file.write(json.dumps(results.__repr__()))
 
     @staticmethod
-    def __is_valid_request(search_request: str):
+    def __is_valid_request(search_request: str) -> bool:
         return isinstance(search_request, str) and search_request is not None and search_request.strip() != ""
 
     @staticmethod
-    def see_dir(path):
+    def __create_dir(path) -> None:
         if not os.path.exists(path):
             os.mkdir(path)
 
